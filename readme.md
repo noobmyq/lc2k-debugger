@@ -23,7 +23,7 @@ More information about how to develop a new debug adapter can be found
 You can now 'step through' the `readme.md` file, set and hit breakpoints, and run into exceptions (if the word exception appears in a line).
 
 ![Mock Debug](images/mock-debug.gif)
-
+stop
 ## Build and Run
 
 * Clone the project [https://github.com/Microsoft/vscode-mock-debug.git](https://github.com/Microsoft/vscode-mock-debug.git)
