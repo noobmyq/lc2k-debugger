@@ -157,6 +157,8 @@ export class MockRuntime extends EventEmitter {
         for (let i = 0; i < 8; i++) {
             this.variables.set(`reg ${i}`, new RuntimeVariable(`reg ${i}`, 0));
         }
+        // create local vectors: mem
+        this.variables.set('mem', new RuntimeVariable('mem', new Array(256).fill(0)));
     }
 
     /**
@@ -413,13 +415,13 @@ export class MockRuntime extends EventEmitter {
 
         let a: RuntimeVariable[] = [];
 
-        for (let i = 0; i < 8; i++) {
-            a.push(new RuntimeVariable(`reg ${i}`, 0));
-            if (cancellationToken && cancellationToken()) {
-                break;
-            }
-            // await timeout(1000);
-        }
+        // for (let i = 0; i < 8; i++) {
+        //     a.push(new RuntimeVariable(`reg ${i}`, 0));
+        //     if (cancellationToken && cancellationToken()) {
+        //         break;
+        //     }
+        //     // await timeout(1000);
+        // }
 
         return a;
     }
@@ -494,6 +496,28 @@ export class MockRuntime extends EventEmitter {
                 if (match) {
                     this.labels.push({ name: match[1], line: l, index: 0 });
                 }
+                // check if it is .fill
+                const FILL_REGEXP = /^([^\s]*)\s+(\.fill)\s+([^\s]+)(\s+)?(.*)?/g;
+                const fillMatch = FILL_REGEXP.exec(line);
+                if (fillMatch) {
+                    const label = this.labels.find(l => l.name === fillMatch[1])?.line;
+                    if (label === undefined) {
+                        this.sendEvent('output', `Label ${fillMatch[1]} not found`);
+                        return;
+                    }
+                    let value = !isNaN(Number(fillMatch[3])) ? parseInt(fillMatch[3]) : fillMatch[3];
+                    if (typeof value === 'string') {
+                        let v = this.labels.find(l => l.name === fillMatch[3])?.line;
+                        if (v === undefined) {
+                            this.sendEvent('output', `Label ${fillMatch[3]} not found`);
+                            return;
+                        } else {
+                            this.variables.get('mem')!.value[label] = v;
+                        }
+                    } else {
+                        this.variables.get('mem')!.value[label] = value;
+                    }
+                }
             }
         }
 
@@ -541,10 +565,11 @@ export class MockRuntime extends EventEmitter {
                         this.sendEvent('stopOnException', 'Invalid register: only 8 registers are available');
                     }
                     // nor r1 and r2 and store in r3, all the number are 32bit
-                    var result: number = ~(this.variables[r1] | this.variables[r2]);
+                    var result: number = ~(Number(this.variables.get(`reg ${r1}`)?.value) | Number(this.variables.get(`reg ${r2}`)?.value));
                     // if the result is over 32bit, truncate it
                     result = result & 0xFFFFFFFF;
-                    this.variables[offset] = result;
+                    const v = new RuntimeVariable(`reg ${offset}`, result);
+                    this.variables.set(`reg ${offset}`, v);
                 }
                 else {
                     this.sendEvent('stopOnException', 'Should be a register');
@@ -553,24 +578,96 @@ export class MockRuntime extends EventEmitter {
             case 'beq':
                 // check if offset is a number
                 if (typeof offset === 'number') {
-                    if (this.variables[r1] === this.variables[r2]) {
-                        this.currentLine = offset;
+                    if (this.variables.get(`reg ${r1}`)?.value === this.variables.get(`reg ${r2}`)?.value) {
+                        this.currentLine = offset - 1;
                     }
                 } else {
                     // load the label
                     var label = this.labels.find((label) => label.name === offset);
                     if (label) {
-                        if (this.variables[r1] === this.variables[r2]) {
-                            this.currentLine = label.line;
+                        if (this.variables.get(`reg ${r1}`)?.value === this.variables.get(`reg ${r2}`)?.value) {
+                            this.currentLine = label.line - 1;
                         }
                     }
                     else {
                         this.sendEvent('stopOnException', 'Label not found');
                     }
                 }
+                break;
+            case 'lw':
+                var num_offset;
+                // check if offset is a number
+                if (typeof offset === 'string') {
+                    // load the label
+                    var label = this.labels.find((label) => label.name === offset);
+                    if (label) {
+                        num_offset = label.line;
+                    }
+                    else {
+                        this.sendEvent('stopOnException', 'Label not found');
+                    }
+                } else {
+                    num_offset = offset;
+                }
+                var address = this.variables.get(`reg ${r1}`)?.value + num_offset;
+                var value = this.variables.get('mem')?.value[address];
+                if (value === undefined) {
+                    this.sendEvent('stopOnException', 'Memory out of bound');
+                }
+                const v = new RuntimeVariable(`reg ${r2}`, value);
+                this.variables.set(`reg ${r2}`, v);
+                break;
+            case 'sw':
+                var num_offset;
+                // check if offset is a number
+                if (typeof offset === 'string') {
+                    // load the label
+                    var label = this.labels.find((label) => label.name === offset);
+                    if (label) {
+                        num_offset = label.line;
+                    }
+                    else {
+                        this.sendEvent('stopOnException', 'Label not found');
+                    }
+                } else {
+                    num_offset = offset;
+                }
+                address = this.variables.get(`reg ${r1}`)?.value + num_offset;
+                value = Number(this.variables.get(`reg ${r2}`)?.value);
+                this.variables.get('mem')!.value[address] = value;
+                break;
         }
     }
 
+    // execute J type instruction and update global variables
+    private executeJType(op: string, r1: number, r2: number): void {
+        switch (op) {
+            case 'jalr':
+                const v = new RuntimeVariable(`reg ${r2}`, this.currentLine + 1);
+                this.variables.set(`reg ${r2}`, v);
+                this.currentLine = Number(this.variables.get(`reg ${r1}`)?.value) - 1;
+                break;
+            default:
+                this.sendEvent('stopOnException', 'Invalid instruction');
+        }
+    }
+
+    // execute O type instruction and update global variables
+    private executeOType(op: string): void {
+        switch (op) {
+            case 'halt':
+                // print out all the registers
+                for (let i = 0; i < 8; i++) {
+                    this.sendEvent('output', 'console', `reg ${i}: ${this.variables.get(`reg ${i}`)?.value}`, this._sourceFile, 0);
+                }
+                this.sendEvent('end');
+                return;
+            case 'noop':
+                break;
+            default:
+                this.sendEvent('stopOnException', 'Invalid instruction');
+        }
+    }
     /**
      * return true on stop
      */
@@ -659,12 +756,14 @@ export class MockRuntime extends EventEmitter {
             reg2 = parseInt(match[4]);
             comment = match[6];
             this.sendEvent('output', 'console', `this J cmd: ${label} ${op} ${reg1} ${reg2} ${comment}`, this._sourceFile, ln, 0);
+            this.executeJType(op, reg1, reg2);
         } else if (match = O_INST_REGEX.exec(line)) {
             // O-type instruction
             label = match[1];
             op = match[2];
             comment = match[4];
             this.sendEvent('output', 'console', `this O cmd: ${label} ${op} ${comment}`, this._sourceFile, ln, 0);
+            this.executeOType(op);
         } else if (match = FILL_REGEX.exec(line)) {
             // .fill instruction
             label = match[1];
