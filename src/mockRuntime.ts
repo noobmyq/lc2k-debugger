@@ -158,7 +158,7 @@ export class MockRuntime extends EventEmitter {
             this.variables.set(`reg ${i}`, new RuntimeVariable(`reg ${i}`, 0));
         }
         // create local vectors: mem
-        this.variables.set('mem', new RuntimeVariable('mem', new Array(256).fill(0)));
+        this.variables.set('mem', new RuntimeVariable('mem', new Array(1000).fill(0)));
     }
 
     /**
@@ -415,19 +415,24 @@ export class MockRuntime extends EventEmitter {
 
         let a: RuntimeVariable[] = [];
 
-        // for (let i = 0; i < 8; i++) {
-        //     a.push(new RuntimeVariable(`reg ${i}`, 0));
-        //     if (cancellationToken && cancellationToken()) {
-        //         break;
-        //     }
-        //     // await timeout(1000);
-        // }
-
         return a;
     }
 
     public getLocalVariables(): RuntimeVariable[] {
-        return Array.from(this.variables, ([name, value]) => value);
+        // only return first 100 elements in mem
+
+        // extract 8 registers
+        var shows: RuntimeVariable[] = [];
+        for (let i = 0; i < 8; i++) {
+            shows.push(this.variables.get(`reg ${i}`)!);
+        }
+        for (let i = 0; i < 300; i++) {
+            const v = this.variables.get(`mem`)!.value[i];
+            if (v) {
+                shows.push(new RuntimeVariable(`mem[${i}]`, v));
+            }
+        }
+        return shows;
     }
 
     public getLocalVariable(name: string): RuntimeVariable | undefined {
@@ -486,6 +491,8 @@ export class MockRuntime extends EventEmitter {
     private initializeContents(memory: Uint8Array) {
         this.sourceLines = new TextDecoder().decode(memory).split(/\r?\n/);
 
+        // allocate memory for mem
+        this.variables.set('mem', new RuntimeVariable('mem', new Array(this.sourceLines.length)));
         // extract all the labels
         for (let l = 0; l < this.sourceLines.length; l++) {
             const line = this.sourceLines[l];
@@ -634,6 +641,7 @@ export class MockRuntime extends EventEmitter {
                 }
                 address = this.variables.get(`reg ${r1}`)?.value + num_offset;
                 value = Number(this.variables.get(`reg ${r2}`)?.value);
+
                 this.variables.get('mem')!.value[address] = value;
                 break;
         }
