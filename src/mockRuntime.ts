@@ -31,11 +31,6 @@ interface IRuntimeStack {
     frames: IRuntimeStackFrame[];
 }
 
-interface RuntimeDisassembledInstruction {
-    address: number;
-    instruction: string;
-    line?: number;
-}
 
 export type IRuntimeVariableType = number | boolean | string | RuntimeVariable[];
 
@@ -168,19 +163,19 @@ export class MockRuntime extends EventEmitter {
                 this.findNextStatement('stopOnEntry');
             } else {
                 // we just start to run until we hit a breakpoint, an exception, or the end of the program
-                this.continue(false);
+                this.continue();
             }
         } else {
-            this.continue(false);
+            this.continue();
         }
     }
 
     /**
      * Continue execution to the end/beginning.
      */
-    public continue(reverse: boolean) {
+    public continue() {
 
-        while (!this.executeLine(this.currentLine, reverse)) {
+        while (!this.executeLine(this.currentLine)) {
             if (this.updateCurrentLine()) {
                 break;
             }
@@ -193,17 +188,13 @@ export class MockRuntime extends EventEmitter {
     /**
      * Step to the next/previous non empty line.
      */
-    public step(instruction: boolean, reverse: boolean) {
+    public step(instruction: boolean) {
 
         if (instruction) {
-            if (reverse) {
-                this.instruction--;
-            } else {
-                this.instruction++;
-            }
+            this.instruction++;
             this.sendEvent('stopOnStep');
         } else {
-            if (!this.executeLine(this.currentLine, reverse)) {
+            if (!this.executeLine(this.currentLine)) {
                 if (!this.updateCurrentLine()) {
                     this.findNextStatement('stopOnStep');
                 }
@@ -328,10 +319,6 @@ export class MockRuntime extends EventEmitter {
         this.breakAddresses.clear();
     }
 
-    public setExceptionsFilters(namedException: string | undefined, otherExceptions: boolean): void {
-
-    }
-
     public setInstructionBreakpoint(address: number): boolean {
         this.instructionBreakpoints.add(address);
         return true;
@@ -341,16 +328,8 @@ export class MockRuntime extends EventEmitter {
         this.instructionBreakpoints.clear();
     }
 
-    public async getGlobalVariables(cancellationToken?: () => boolean): Promise<RuntimeVariable[]> {
-
-        let a: RuntimeVariable[] = [];
-
-        return a;
-    }
 
     public getLocalVariables(): RuntimeVariable[] {
-        // only return first 100 elements in mem
-
         // extract 8 registers
         var shows: RuntimeVariable[] = [];
         for (let i = 0; i < 8; i++) {
@@ -369,30 +348,6 @@ export class MockRuntime extends EventEmitter {
         return this.variables.get(name);
     }
 
-    /**
-     * Return words of the given address range as "instructions"
-     */
-    public disassemble(address: number, instructionCount: number): RuntimeDisassembledInstruction[] {
-
-        const instructions: RuntimeDisassembledInstruction[] = [];
-
-        for (let a = address; a < address + instructionCount; a++) {
-            if (a >= 0 && a < this.instructions.length) {
-                instructions.push({
-                    address: a,
-                    instruction: this.instructions[a].name,
-                    line: this.instructions[a].line
-                });
-            } else {
-                instructions.push({
-                    address: a,
-                    instruction: 'nop'
-                });
-            }
-        }
-
-        return instructions;
-    }
 
     // private methods
 
@@ -651,11 +606,11 @@ export class MockRuntime extends EventEmitter {
      * "execute a line" of the readme markdown.
      * Returns true if execution sent out a stopped event and needs to stop.
      */
-    private executeLine(ln: number, reverse: boolean): boolean {
+    private executeLine(ln: number): boolean {
 
         // first "execute" the instructions associated with this line and potentially hit instruction breakpoints
-        while (reverse ? this.instruction >= this.starts[ln] : this.instruction < this.ends[ln]) {
-            reverse ? this.instruction-- : this.instruction++;
+        while (this.instruction < this.ends[ln]) {
+            this.instruction++;
             if (this.instructionBreakpoints.has(this.instruction)) {
                 this.sendEvent('stopOnInstructionBreakpoint');
                 return true;

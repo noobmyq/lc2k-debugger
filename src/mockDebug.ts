@@ -204,7 +204,7 @@ export class MockDebugSession extends LoggingDebugSession {
         response.body.supportsSetExpression = true;
 
         // make VS Code send disassemble request
-        response.body.supportsDisassembleRequest = true;
+        response.body.supportsDisassembleRequest = false;
         response.body.supportsSteppingGranularity = true;
         response.body.supportsInstructionBreakpoints = true;
 
@@ -313,35 +313,6 @@ export class MockDebugSession extends LoggingDebugSession {
                 breakpoints: []
             };
         }
-        this.sendResponse(response);
-    }
-
-    protected async setExceptionBreakPointsRequest(response: DebugProtocol.SetExceptionBreakpointsResponse, args: DebugProtocol.SetExceptionBreakpointsArguments): Promise<void> {
-
-        let namedException: string | undefined = undefined;
-        let otherExceptions = false;
-
-        if (args.filterOptions) {
-            for (const filterOption of args.filterOptions) {
-                switch (filterOption.filterId) {
-                    case 'namedException':
-                        namedException = args.filterOptions[0].condition;
-                        break;
-                    case 'otherExceptions':
-                        otherExceptions = true;
-                        break;
-                }
-            }
-        }
-
-        if (args.filters) {
-            if (args.filters.indexOf('otherExceptions') >= 0) {
-                otherExceptions = true;
-            }
-        }
-
-        this._runtime.setExceptionsFilters(namedException, otherExceptions);
-
         this.sendResponse(response);
     }
 
@@ -459,13 +430,7 @@ export class MockDebugSession extends LoggingDebugSession {
         if (v === 'locals') {
             vs = this._runtime.getLocalVariables();
         } else if (v === 'globals') {
-            if (request) {
-                this._cancellationTokens.set(request.seq, false);
-                vs = await this._runtime.getGlobalVariables(() => !!this._cancellationTokens.get(request.seq));
-                this._cancellationTokens.delete(request.seq);
-            } else {
-                vs = await this._runtime.getGlobalVariables();
-            }
+            // no globals
         } else if (v && Array.isArray(v.value)) {
             vs = v.value;
         }
@@ -497,17 +462,17 @@ export class MockDebugSession extends LoggingDebugSession {
     }
 
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-        this._runtime.continue(false);
+        this._runtime.continue();
         this.sendResponse(response);
     }
 
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-        this._runtime.step(args.granularity === 'instruction', false);
+        this._runtime.step(args.granularity === 'instruction');
         this.sendResponse(response);
     }
 
     protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-        this._runtime.step(args.granularity === 'instruction', false);
+        this._runtime.step(args.granularity === 'instruction');
         this.sendResponse(response);
     }
 
@@ -728,39 +693,7 @@ export class MockDebugSession extends LoggingDebugSession {
         }
     }
 
-    protected disassembleRequest(response: DebugProtocol.DisassembleResponse, args: DebugProtocol.DisassembleArguments) {
 
-        const baseAddress = parseInt(args.memoryReference);
-        const offset = args.instructionOffset || 0;
-        const count = args.instructionCount;
-
-        const isHex = args.memoryReference.startsWith('0x');
-        const pad = isHex ? args.memoryReference.length - 2 : args.memoryReference.length;
-
-        const loc = this.createSource(this._runtime.sourceFile);
-
-        let lastLine = -1;
-
-        const instructions = this._runtime.disassemble(baseAddress + offset, count).map(instruction => {
-            const address = instruction.address.toString(isHex ? 16 : 10).padStart(pad, '0');
-            const instr: DebugProtocol.DisassembledInstruction = {
-                address: isHex ? `0x${address}` : `${address}`,
-                instruction: instruction.instruction
-            };
-            // if instruction's source starts on a new line add the source to instruction
-            if (instruction.line !== undefined && lastLine !== instruction.line) {
-                lastLine = instruction.line;
-                instr.location = loc;
-                instr.line = this.convertDebuggerLineToClient(instruction.line);
-            }
-            return instr;
-        });
-
-        response.body = {
-            instructions: instructions
-        };
-        this.sendResponse(response);
-    }
 
     protected setInstructionBreakpointsRequest(response: DebugProtocol.SetInstructionBreakpointsResponse, args: DebugProtocol.SetInstructionBreakpointsArguments) {
 

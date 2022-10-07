@@ -128,14 +128,14 @@
     ],
     "breakpoints": [
       {
-        "language": "markdown"
+        "language": "lc2k"
       }
     ],
     "debuggers": [
       {
         "type": "mock",
         "languages": [
-          "markdown"
+          "LC2K Assembly"
         ],
         "label": "Mock Debug",
         "program": "./out/debugAdapter.js",
