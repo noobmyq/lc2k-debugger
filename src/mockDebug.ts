@@ -313,34 +313,6 @@ export class MockDebugSession extends LoggingDebugSession {
         }
         this.sendResponse(response);
     }
-    protected async setExceptionBreakPointsRequest(response: DebugProtocol.SetExceptionBreakpointsResponse, args: DebugProtocol.SetExceptionBreakpointsArguments): Promise<void> {
-
-        let namedException: string | undefined = undefined;
-        let otherExceptions = false;
-
-        if (args.filterOptions) {
-            for (const filterOption of args.filterOptions) {
-                switch (filterOption.filterId) {
-                    case 'namedException':
-                        namedException = args.filterOptions[0].condition;
-                        break;
-                    case 'otherExceptions':
-                        otherExceptions = true;
-                        break;
-                }
-            }
-        }
-
-        if (args.filters) {
-            if (args.filters.indexOf('otherExceptions') >= 0) {
-                otherExceptions = true;
-            }
-        }
-
-        this._runtime.setExceptionsFilters(namedException, otherExceptions);
-
-        this.sendResponse(response);
-    }
     protected exceptionInfoRequest(response: DebugProtocol.ExceptionInfoResponse, args: DebugProtocol.ExceptionInfoArguments) {
         response.body = {
             exceptionId: String(args.threadId),

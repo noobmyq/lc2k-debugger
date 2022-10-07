@@ -300,9 +300,7 @@ export class MockRuntime extends EventEmitter {
         this.instructionBreakpoints.clear();
     }
 
-    public setExceptionsFilters(namedException: string | undefined, otherExceptions: boolean): void {
 
-    }
 
     public getLocalVariables(): RuntimeVariable[] {
         // extract 8 registers

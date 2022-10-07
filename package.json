@@ -215,13 +215,14 @@
           }
         },
         "initialConfigurations": [
-          {
-            "type": "mock",
-            "request": "launch",
-            "name": "Ask for file name",
-            "program": "${workspaceFolder}/${command:AskForProgramName}",
-            "stopOnEntry": true
-          }
+            {
+                "type": "mock",
+                "request": "launch",
+                "name": "Debug lc2k assembly",
+                "program": "${workspaceFolder}/${fileBasename}",
+                "stopOnEntry": true,
+                "trace": false
+            }
         ],
         "configurationSnippets": [
           {
