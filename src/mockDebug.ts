@@ -15,13 +15,12 @@ import {
     LoggingDebugSession,
     InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
     ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
-    Thread, StackFrame, Scope, Source, Handles, Breakpoint, MemoryEvent
+    Thread, StackFrame, Scope, Source, Handles, Breakpoint
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { basename } from 'path-browserify';
 import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, timeout, IRuntimeVariableType } from './mockRuntime';
 import { Subject } from 'await-notify';
-import * as base64 from 'base64-js';
 
 /**
  * This interface describes the mock-debug specific launch attributes
@@ -58,7 +57,6 @@ export class MockDebugSession extends LoggingDebugSession {
     private _configurationDone = new Subject();
 
     private _cancellationTokens = new Map<number, boolean>();
-
     private _reportProgress = false;
     private _progressId = 10000;
     private _cancelledProgressId: string | undefined = undefined;
@@ -175,24 +173,24 @@ export class MockDebugSession extends LoggingDebugSession {
         response.body.supportsStepInTargetsRequest = false;
 
         // the adapter defines two exceptions filters, one with support for conditions.
-        response.body.supportsExceptionFilterOptions = true;
-        response.body.exceptionBreakpointFilters = [
-            {
-                filter: 'namedException',
-                label: "Named Exception",
-                description: `Break on named exceptions. Enter the exception's name as the Condition.`,
-                default: false,
-                supportsCondition: true,
-                conditionDescription: `Enter the exception's name`
-            },
-            {
-                filter: 'otherExceptions',
-                label: "Other Exceptions",
-                description: 'This is a other exception',
-                default: true,
-                supportsCondition: false
-            }
-        ];
+        response.body.supportsExceptionFilterOptions = false;
+        // response.body.exceptionBreakpointFilters = [
+        //     {
+        //         filter: 'namedException',
+        //         label: "Named Exception",
+        //         description: `Break on named exceptions. Enter the exception's name as the Condition.`,
+        //         default: false,
+        //         supportsCondition: true,
+        //         conditionDescription: `Enter the exception's name`
+        //     },
+        //     {
+        //         filter: 'otherExceptions',
+        //         label: "Other Exceptions",
+        //         description: 'This is a other exception',
+        //         default: true,
+        //         supportsCondition: false
+        //     }
+        // ];
 
         // make VS Code send exceptionInfo request
         response.body.supportsExceptionInfoRequest = true;
@@ -204,7 +202,7 @@ export class MockDebugSession extends LoggingDebugSession {
         response.body.supportsSetExpression = true;
 
         // make VS Code send disassemble request
-        response.body.supportsDisassembleRequest = true;
+        response.body.supportsDisassembleRequest = false;
         response.body.supportsSteppingGranularity = true;
         response.body.supportsInstructionBreakpoints = true;
 
@@ -315,45 +313,14 @@ export class MockDebugSession extends LoggingDebugSession {
         }
         this.sendResponse(response);
     }
-
-    protected async setExceptionBreakPointsRequest(response: DebugProtocol.SetExceptionBreakpointsResponse, args: DebugProtocol.SetExceptionBreakpointsArguments): Promise<void> {
-
-        let namedException: string | undefined = undefined;
-        let otherExceptions = false;
-
-        if (args.filterOptions) {
-            for (const filterOption of args.filterOptions) {
-                switch (filterOption.filterId) {
-                    case 'namedException':
-                        namedException = args.filterOptions[0].condition;
-                        break;
-                    case 'otherExceptions':
-                        otherExceptions = true;
-                        break;
-                }
-            }
-        }
-
-        if (args.filters) {
-            if (args.filters.indexOf('otherExceptions') >= 0) {
-                otherExceptions = true;
-            }
-        }
-
-        this._runtime.setExceptionsFilters(namedException, otherExceptions);
-
-        this.sendResponse(response);
-    }
-
     protected exceptionInfoRequest(response: DebugProtocol.ExceptionInfoResponse, args: DebugProtocol.ExceptionInfoArguments) {
         response.body = {
-            exceptionId: 'Exception ID',
-            description: 'This is a descriptive description of the exception.',
+            exceptionId: String(args.threadId),
+            description: 'Try looking at the Debug Console for more information',
             breakMode: 'always',
             details: {
                 message: 'Message contained in the exception.',
-                typeName: 'Short type name of the exception object',
-                stackTrace: 'stack frame 1\nstack frame 2',
+                typeName: 'Short type name of the exception object'
             }
         };
         this.sendResponse(response);
@@ -413,43 +380,7 @@ export class MockDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected async writeMemoryRequest(response: DebugProtocol.WriteMemoryResponse, { data, memoryReference, offset = 0 }: DebugProtocol.WriteMemoryArguments) {
-        const variable = this._variableHandles.get(Number(memoryReference));
-        if (typeof variable === 'object') {
-            const decoded = base64.toByteArray(data);
-            variable.setMemory(decoded, offset);
-            response.body = { bytesWritten: decoded.length };
-        } else {
-            response.body = { bytesWritten: 0 };
-        }
 
-        this.sendResponse(response);
-        this.sendEvent(new InvalidatedEvent(['variables']));
-    }
-
-    protected async readMemoryRequest(response: DebugProtocol.ReadMemoryResponse, { offset = 0, count, memoryReference }: DebugProtocol.ReadMemoryArguments) {
-        const variable = this._variableHandles.get(Number(memoryReference));
-        if (typeof variable === 'object' && variable.memory) {
-            const memory = variable.memory.subarray(
-                Math.min(offset, variable.memory.length),
-                Math.min(offset + count, variable.memory.length),
-            );
-
-            response.body = {
-                address: offset.toString(),
-                data: base64.fromByteArray(memory),
-                unreadableBytes: count - memory.length
-            };
-        } else {
-            response.body = {
-                address: offset.toString(),
-                data: '',
-                unreadableBytes: count
-            };
-        }
-
-        this.sendResponse(response);
-    }
 
     protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
 
@@ -459,13 +390,7 @@ export class MockDebugSession extends LoggingDebugSession {
         if (v === 'locals') {
             vs = this._runtime.getLocalVariables();
         } else if (v === 'globals') {
-            if (request) {
-                this._cancellationTokens.set(request.seq, false);
-                vs = await this._runtime.getGlobalVariables(() => !!this._cancellationTokens.get(request.seq));
-                this._cancellationTokens.delete(request.seq);
-            } else {
-                vs = await this._runtime.getGlobalVariables();
-            }
+            // no globals
         } else if (v && Array.isArray(v.value)) {
             vs = v.value;
         }
@@ -488,26 +413,23 @@ export class MockDebugSession extends LoggingDebugSession {
             rv.value = this.convertToRuntime(args.value);
             response.body = this.convertFromRuntime(rv);
 
-            if (rv.memory && rv.reference) {
-                this.sendEvent(new MemoryEvent(String(rv.reference), 0, rv.memory.length));
-            }
         }
 
         this.sendResponse(response);
     }
 
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-        this._runtime.continue(false);
+        this._runtime.continue();
         this.sendResponse(response);
     }
 
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-        this._runtime.step(args.granularity === 'instruction', false);
+        this._runtime.step();
         this.sendResponse(response);
     }
 
     protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-        this._runtime.step(args.granularity === 'instruction', false);
+        this._runtime.step();
         this.sendResponse(response);
     }
 
@@ -728,39 +650,7 @@ export class MockDebugSession extends LoggingDebugSession {
         }
     }
 
-    protected disassembleRequest(response: DebugProtocol.DisassembleResponse, args: DebugProtocol.DisassembleArguments) {
 
-        const baseAddress = parseInt(args.memoryReference);
-        const offset = args.instructionOffset || 0;
-        const count = args.instructionCount;
-
-        const isHex = args.memoryReference.startsWith('0x');
-        const pad = isHex ? args.memoryReference.length - 2 : args.memoryReference.length;
-
-        const loc = this.createSource(this._runtime.sourceFile);
-
-        let lastLine = -1;
-
-        const instructions = this._runtime.disassemble(baseAddress + offset, count).map(instruction => {
-            const address = instruction.address.toString(isHex ? 16 : 10).padStart(pad, '0');
-            const instr: DebugProtocol.DisassembledInstruction = {
-                address: isHex ? `0x${address}` : `${address}`,
-                instruction: instruction.instruction
-            };
-            // if instruction's source starts on a new line add the source to instruction
-            if (instruction.line !== undefined && lastLine !== instruction.line) {
-                lastLine = instruction.line;
-                instr.location = loc;
-                instr.line = this.convertDebuggerLineToClient(instruction.line);
-            }
-            return instr;
-        });
-
-        response.body = {
-            instructions: instructions
-        };
-        this.sendResponse(response);
-    }
 
     protected setInstructionBreakpointsRequest(response: DebugProtocol.SetInstructionBreakpointsResponse, args: DebugProtocol.SetInstructionBreakpointsArguments) {
 
@@ -865,10 +755,7 @@ export class MockDebugSession extends LoggingDebugSession {
             }
         }
 
-        if (v.memory) {
-            v.reference ??= this._variableHandles.create(v);
-            dapVariable.memoryReference = String(v.reference);
-        }
+
 
         return dapVariable;
     }

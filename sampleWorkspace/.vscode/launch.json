@@ -1,24 +1,16 @@
 {
-	// Use IntelliSense to learn about possible attributes.
-	// Hover to view descriptions of existing attributes.
-	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-	"version": "0.2.0",
-	"configurations": [
-		{
-			"type": "mock",
-			"request": "launch",
-			"name": "Debug readme.md",
-			"program": "${workspaceFolder}/mult.as",
-			"stopOnEntry": true,
-			"trace": false
-		},
-		{
-			"type": "mock",
-			"request": "attach",
-			"name": "Attach readme.md",
-			"program": "${workspaceFolder}/readme.md",
-			"stopOnEntry": true,
-			"trace": false
-		}
-	]
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "mock",
+            "request": "launch",
+            "name": "Debug lc2k assembly",
+            "program": "${workspaceFolder}/${fileBasename}",
+            "stopOnEntry": true,
+            "trace": false
+        }
+    ]
 }

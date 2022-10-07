@@ -31,16 +31,11 @@ interface IRuntimeStack {
     frames: IRuntimeStackFrame[];
 }
 
-interface RuntimeDisassembledInstruction {
-    address: number;
-    instruction: string;
-    line?: number;
-}
 
 export type IRuntimeVariableType = number | boolean | string | RuntimeVariable[];
 
 export class RuntimeVariable {
-    private _memory?: Uint8Array;
+    // private _memory?: Uint8Array;
 
     public reference?: number;
 
@@ -50,28 +45,11 @@ export class RuntimeVariable {
 
     public set value(value: IRuntimeVariableType) {
         this._value = value;
-        this._memory = undefined;
     }
 
-    public get memory() {
-        if (this._memory === undefined && typeof this._value === 'string') {
-            this._memory = new TextEncoder().encode(this._value);
-        }
-        return this._memory;
-    }
 
     constructor(public readonly name: string, private _value: IRuntimeVariableType) { }
 
-    public setMemory(data: Uint8Array, offset = 0) {
-        const memory = this.memory;
-        if (!memory) {
-            return;
-        }
-
-        memory.set(data, offset);
-        this._memory = memory;
-        this._value = new TextDecoder().decode(memory);
-    }
 }
 
 interface Word {
@@ -113,10 +91,6 @@ export class MockRuntime extends EventEmitter {
 
     // the contents (= lines) of the one and only file
     private sourceLines: string[] = [];
-    private instructions: Word[] = [];
-    private starts: number[] = [];
-    private ends: number[] = [];
-
     // This is the next line that will be 'executed'
     private _currentLine = 0;
     private get currentLine() {
@@ -124,12 +98,10 @@ export class MockRuntime extends EventEmitter {
     }
     private set currentLine(x) {
         this._currentLine = x;
-        this.instruction = this.starts[x];
     }
     private currentColumn: number | undefined;
 
     // This is the next instruction that will be 'executed'
-    public instruction = 0;
 
     // maps from sourceFile to array of IRuntimeBreakpoint
     private breakPoints = new Map<string, IRuntimeBreakpoint[]>();
@@ -168,19 +140,19 @@ export class MockRuntime extends EventEmitter {
                 this.findNextStatement('stopOnEntry');
             } else {
                 // we just start to run until we hit a breakpoint, an exception, or the end of the program
-                this.continue(false);
+                this.continue();
             }
         } else {
-            this.continue(false);
+            this.continue();
         }
     }
 
     /**
      * Continue execution to the end/beginning.
      */
-    public continue(reverse: boolean) {
+    public continue() {
 
-        while (!this.executeLine(this.currentLine, reverse)) {
+        while (!this.executeLine(this.currentLine)) {
             if (this.updateCurrentLine()) {
                 break;
             }
@@ -193,22 +165,15 @@ export class MockRuntime extends EventEmitter {
     /**
      * Step to the next/previous non empty line.
      */
-    public step(instruction: boolean, reverse: boolean) {
+    public step() {
 
-        if (instruction) {
-            if (reverse) {
-                this.instruction--;
-            } else {
-                this.instruction++;
-            }
-            this.sendEvent('stopOnStep');
-        } else {
-            if (!this.executeLine(this.currentLine, reverse)) {
-                if (!this.updateCurrentLine()) {
-                    this.findNextStatement('stopOnStep');
-                }
+
+        if (!this.executeLine(this.currentLine)) {
+            if (!this.updateCurrentLine()) {
+                this.findNextStatement('stopOnStep');
             }
         }
+
     }
 
     private updateCurrentLine(): boolean {
@@ -236,7 +201,6 @@ export class MockRuntime extends EventEmitter {
         words.push({ name: 'BOTTOM', line: -1, index: -1 });	// add a sentinel so that the stack is never empty...
 
         // if the line contains the word 'disassembly' we support to "disassemble" the line by adding an 'instruction' property to the stackframe
-        const instruction = line.indexOf('disassembly') >= 0 ? this.instruction : undefined;
 
         const column = typeof this.currentColumn === 'number' ? this.currentColumn : undefined;
 
@@ -250,7 +214,6 @@ export class MockRuntime extends EventEmitter {
                 file: this._sourceFile,
                 line: this.currentLine,
                 column: column, // words[i].index
-                instruction: instruction
             };
 
             frames.push(stackFrame);
@@ -328,10 +291,6 @@ export class MockRuntime extends EventEmitter {
         this.breakAddresses.clear();
     }
 
-    public setExceptionsFilters(namedException: string | undefined, otherExceptions: boolean): void {
-
-    }
-
     public setInstructionBreakpoint(address: number): boolean {
         this.instructionBreakpoints.add(address);
         return true;
@@ -341,16 +300,9 @@ export class MockRuntime extends EventEmitter {
         this.instructionBreakpoints.clear();
     }
 
-    public async getGlobalVariables(cancellationToken?: () => boolean): Promise<RuntimeVariable[]> {
 
-        let a: RuntimeVariable[] = [];
-
-        return a;
-    }
 
     public getLocalVariables(): RuntimeVariable[] {
-        // only return first 100 elements in mem
-
         // extract 8 registers
         var shows: RuntimeVariable[] = [];
         for (let i = 0; i < 8; i++) {
@@ -369,30 +321,6 @@ export class MockRuntime extends EventEmitter {
         return this.variables.get(name);
     }
 
-    /**
-     * Return words of the given address range as "instructions"
-     */
-    public disassemble(address: number, instructionCount: number): RuntimeDisassembledInstruction[] {
-
-        const instructions: RuntimeDisassembledInstruction[] = [];
-
-        for (let a = address; a < address + instructionCount; a++) {
-            if (a >= 0 && a < this.instructions.length) {
-                instructions.push({
-                    address: a,
-                    instruction: this.instructions[a].name,
-                    line: this.instructions[a].line
-                });
-            } else {
-                instructions.push({
-                    address: a,
-                    instruction: 'nop'
-                });
-            }
-        }
-
-        return instructions;
-    }
 
     // private methods
 
@@ -439,14 +367,16 @@ export class MockRuntime extends EventEmitter {
                 if (fillMatch) {
                     const label = this.labels.find(l => l.name === fillMatch[1])?.line;
                     if (label === undefined) {
-                        this.sendEvent('output', `Label ${fillMatch[1]} not found`);
+                        this.sendEvent('output', 'console', `Error: label ${fillMatch[1]} not found`, this._sourceFile, l);
+                        this.sendEvent('stopOnException', undefined);
                         return;
                     }
                     let value = !isNaN(Number(fillMatch[3])) ? parseInt(fillMatch[3]) : fillMatch[3];
                     if (typeof value === 'string') {
                         let v = this.labels.find(l => l.name === fillMatch[3])?.line;
                         if (v === undefined) {
-                            this.sendEvent('output', `Label ${fillMatch[3]} not found`);
+                            this.sendEvent('output', 'console', `Error: label ${fillMatch[3]} not found`, this._sourceFile, l);
+                            this.sendEvent('stopOnException', undefined);
                             return;
                         } else {
                             this.variables.get('mem')!.value[label] = v;
@@ -458,32 +388,19 @@ export class MockRuntime extends EventEmitter {
             }
         }
 
-
-        this.instructions = [];
-
-        this.starts = [];
-        this.instructions = [];
-        this.ends = [];
-
-        for (let l = 0; l < this.sourceLines.length; l++) {
-            this.starts.push(this.instructions.length);
-            const words = this.getWords(l, this.sourceLines[l]);
-            for (let word of words) {
-                this.instructions.push(word);
-            }
-            this.ends.push(this.instructions.length);
-        }
     }
 
 
     // execute R type instruction and update global variables
-    private executeRType(op: string, r1: number, r2: number, offset: number | string): void {
+    private executeRType(op: string, r1: number, r2: number, offset: number | string): boolean {
         switch (op) {
             case 'add':
                 // check if offset is a number
                 if (typeof offset === 'number') {
                     if (offset > 7 || offset < 0) {
-                        this.sendEvent('stopOnException', 'Invalid register: only 8 registers are available');
+                        this.sendEvent('output', 'console', `Error: register ${offset} is not valid`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
+                        return false;
                     }
                     // add r1 and r2 and store in r3, all the number are 32bit
                     var result: number = Number(this.variables.get(`reg ${r1}`)?.value) + Number(this.variables.get(`reg ${r2}`)?.value);
@@ -492,14 +409,18 @@ export class MockRuntime extends EventEmitter {
                     const v = new RuntimeVariable(`reg ${offset}`, result);
                     this.variables.set(`reg ${offset}`, v);
                 } else {
-                    this.sendEvent('stopOnException', 'Should be a register');
+                    this.sendEvent('output', 'console', `Error: should be a register for destReg`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
+                    return false;
                 }
                 break;
             case 'nor':
                 // check if offset is a number
                 if (typeof offset === 'number') {
                     if (offset > 7) {
-                        this.sendEvent('stopOnException', 'Invalid register: only 8 registers are available');
+                        this.sendEvent('output', 'console', `Error: register ${offset} is not valid`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
+                        return false;
                     }
                     // nor r1 and r2 and store in r3, all the number are 32bit
                     var result: number = ~(Number(this.variables.get(`reg ${r1}`)?.value) | Number(this.variables.get(`reg ${r2}`)?.value));
@@ -509,7 +430,9 @@ export class MockRuntime extends EventEmitter {
                     this.variables.set(`reg ${offset}`, v);
                 }
                 else {
-                    this.sendEvent('stopOnException', 'Should be a register');
+                    this.sendEvent('output', 'console', `Error: should be a register for destReg`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
+                    return false;
                 }
                 break;
             case 'beq':
@@ -527,7 +450,9 @@ export class MockRuntime extends EventEmitter {
                         }
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
+                        return false;
                     }
                 }
                 break;
@@ -541,7 +466,9 @@ export class MockRuntime extends EventEmitter {
                         num_offset = label.line;
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
+                        return false;
                     }
                 } else {
                     num_offset = offset;
@@ -549,7 +476,9 @@ export class MockRuntime extends EventEmitter {
                 var address = this.variables.get(`reg ${r1}`)?.value + num_offset;
                 var value = this.variables.get('mem')?.value[address];
                 if (value === undefined) {
-                    this.sendEvent('stopOnException', 'Memory out of bound');
+                    this.sendEvent('output', 'console', `Error: address ${address} may not be initialized or out of bound`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
+                    return false;
                 }
                 const v = new RuntimeVariable(`reg ${r2}`, value);
                 this.variables.set(`reg ${r2}`, v);
@@ -564,7 +493,9 @@ export class MockRuntime extends EventEmitter {
                         num_offset = label.line;
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
+                        return false;
                     }
                 } else {
                     num_offset = offset;
@@ -574,11 +505,16 @@ export class MockRuntime extends EventEmitter {
 
                 this.variables.get('mem')!.value[address] = value;
                 break;
+            default:
+                this.sendEvent('output', 'console', `Error: unknown operation ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
+        return true;
     }
 
     // execute J type instruction and update global variables
-    private executeJType(op: string, r1: number, r2: number): void {
+    private executeJType(op: string, r1: number, r2: number): boolean {
         switch (op) {
             case 'jalr':
                 const v = new RuntimeVariable(`reg ${r2}`, this.currentLine + 1);
@@ -586,12 +522,15 @@ export class MockRuntime extends EventEmitter {
                 this.currentLine = Number(this.variables.get(`reg ${r1}`)?.value) - 1;
                 break;
             default:
-                this.sendEvent('stopOnException', 'Invalid instruction');
+                this.sendEvent('output', 'console', `Error: unknown op ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
+        return true;
     }
 
     // execute O type instruction and update global variables
-    private executeOType(op: string): void {
+    private executeOType(op: string): boolean {
         switch (op) {
             case 'halt':
                 // print out all the registers
@@ -599,12 +538,15 @@ export class MockRuntime extends EventEmitter {
                     this.sendEvent('output', 'console', `reg ${i}: ${this.variables.get(`reg ${i}`)?.value}`, this._sourceFile, 0);
                 }
                 this.sendEvent('end');
-                return;
+                return false;
             case 'noop':
                 break;
             default:
-                this.sendEvent('stopOnException', 'Invalid instruction');
+                this.sendEvent('output', 'console', `Error: unknown op ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
+        return true;
     }
     /**
      * return true on stop
@@ -651,16 +593,7 @@ export class MockRuntime extends EventEmitter {
      * "execute a line" of the readme markdown.
      * Returns true if execution sent out a stopped event and needs to stop.
      */
-    private executeLine(ln: number, reverse: boolean): boolean {
-
-        // first "execute" the instructions associated with this line and potentially hit instruction breakpoints
-        while (reverse ? this.instruction >= this.starts[ln] : this.instruction < this.ends[ln]) {
-            reverse ? this.instruction-- : this.instruction++;
-            if (this.instructionBreakpoints.has(this.instruction)) {
-                this.sendEvent('stopOnInstructionBreakpoint');
-                return true;
-            }
-        }
+    private executeLine(ln: number): boolean {
 
         const line = this.getLine(ln);
 
@@ -680,19 +613,21 @@ export class MockRuntime extends EventEmitter {
             reg1 = parseInt(match[3]);
             reg2 = parseInt(match[4]);
             offset = !isNaN(Number(match[5])) ? parseInt(match[5]) : match[5];
-            this.executeRType(op, reg1, reg2, offset);
+            if (!this.executeRType(op, reg1, reg2, offset)) {
+                return true;
+            }
         } else if (match = J_INST_REGEX.exec(line)) {
             // J-type instruction
             op = match[2];
             reg1 = parseInt(match[3]);
             reg2 = parseInt(match[4]);
-            this.executeJType(op, reg1, reg2);
+            if (!this.executeJType(op, reg1, reg2)) {
+                return true;
+            }
         } else if (match = O_INST_REGEX.exec(line)) {
             // O-type instruction
             op = match[2];
-            this.executeOType(op);
-            // if it is halt, we should stop
-            if (op === 'halt') {
+            if (!this.executeOType(op)) {
                 return true;
             }
         } else if (match = FILL_REGEX.exec(line)) {
@@ -701,7 +636,8 @@ export class MockRuntime extends EventEmitter {
             offset = match[3];
         } else {
             // invalid instruction
-            this.sendEvent('stopOnException', "invalid pattern");
+            this.sendEvent('output', 'console', `Error: invalid instruction ${line}`, this._sourceFile, ln);
+            this.sendEvent('stopOnException', undefined);
             return true;
         }
 
@@ -713,7 +649,6 @@ export class MockRuntime extends EventEmitter {
 
         const bps = this.breakPoints.get(path);
         if (bps) {
-            await this.loadSource(path);
             bps.forEach(bp => {
                 if (!bp.verified && bp.line < this.sourceLines.length) {
                     const srcLine = this.getLine(bp.line);

@@ -1,10 +1,7 @@
-	add	0	1	0
 	lw	0	3	mplier	second multiplier b in reg3
-	noop
-	jalr	3	2
 	lw	0	7	one	reg7 is 1, mask
 	add	0	4	0	bit record store in reg4
-	lw	0	5	sevent	reg5 is 17
+	lw	0	5	seven	reg5 is 17
 	add	0	7	6	store reg6 with i, initialize as 1
 for1	beq	5	6	end1
 	nor	3	3	1	store ~b to reg1
@@ -36,7 +33,7 @@ jump	add	7	7	7	mask<<=1;
 	add	5	4	4	bit--
 	beq	0	0	while
 end	halt
-mplier	.fill	3
+mplier	.fill	5
 one	.fill	1
 sevent	.fill	17
 mcand	.fill	3
