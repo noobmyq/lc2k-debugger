@@ -596,6 +596,7 @@ export class MockRuntime extends EventEmitter {
             reg2 = parseInt(match[4]);
             offset = !isNaN(Number(match[5])) ? parseInt(match[5]) : match[5];
             if (!this.executeRType(op, reg1, reg2, offset)) {
+                this.sendEvent('end');
                 return true;
             }
         } else if (match = J_INST_REGEX.exec(line)) {

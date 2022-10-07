@@ -173,7 +173,7 @@ export class MockDebugSession extends LoggingDebugSession {
         response.body.supportsStepInTargetsRequest = false;
 
         // the adapter defines two exceptions filters, one with support for conditions.
-        response.body.supportsExceptionFilterOptions = true;
+        response.body.supportsExceptionFilterOptions = false;
         response.body.exceptionBreakpointFilters = [
             {
                 filter: 'namedException',
