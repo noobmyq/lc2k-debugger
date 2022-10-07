@@ -772,6 +772,10 @@ export class MockRuntime extends EventEmitter {
             comment = match[4];
             this.sendEvent('output', 'console', `this O cmd: ${label} ${op} ${comment}`, this._sourceFile, ln, 0);
             this.executeOType(op);
+            // if it is halt, we should stop
+            if (op === 'halt') {
+                return true;
+            }
         } else if (match = FILL_REGEX.exec(line)) {
             // .fill instruction
             label = match[1];
