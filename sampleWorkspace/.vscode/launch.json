@@ -8,7 +8,7 @@
 			"type": "mock",
 			"request": "launch",
 			"name": "Debug readme.md",
-			"program": "${workspaceFolder}/mult.as",
+			"program": "${workspaceFolder}/${fileBasename}",
 			"stopOnEntry": true,
 			"trace": false
 		},
