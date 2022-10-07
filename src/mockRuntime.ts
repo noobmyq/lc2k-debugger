@@ -369,14 +369,16 @@ export class MockRuntime extends EventEmitter {
                 if (fillMatch) {
                     const label = this.labels.find(l => l.name === fillMatch[1])?.line;
                     if (label === undefined) {
-                        this.sendEvent('output', `Label ${fillMatch[1]} not found`);
+                        this.sendEvent('output', 'console', `Error: label ${fillMatch[1]} not found`, this._sourceFile, l);
+                        this.sendEvent('stopOnException', undefined);
                         return;
                     }
                     let value = !isNaN(Number(fillMatch[3])) ? parseInt(fillMatch[3]) : fillMatch[3];
                     if (typeof value === 'string') {
                         let v = this.labels.find(l => l.name === fillMatch[3])?.line;
                         if (v === undefined) {
-                            this.sendEvent('output', `Label ${fillMatch[3]} not found`);
+                            this.sendEvent('output', 'console', `Error: label ${fillMatch[3]} not found`, this._sourceFile, l);
+                            this.sendEvent('stopOnException', undefined);
                             return;
                         } else {
                             this.variables.get('mem')!.value[label] = v;
@@ -398,7 +400,8 @@ export class MockRuntime extends EventEmitter {
                 // check if offset is a number
                 if (typeof offset === 'number') {
                     if (offset > 7 || offset < 0) {
-                        this.sendEvent('stopOnException', 'Invalid register: only 8 registers are available');
+                        this.sendEvent('output', 'console', `Error: register ${offset} is not valid`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
                         return false;
                     }
                     // add r1 and r2 and store in r3, all the number are 32bit
@@ -408,7 +411,8 @@ export class MockRuntime extends EventEmitter {
                     const v = new RuntimeVariable(`reg ${offset}`, result);
                     this.variables.set(`reg ${offset}`, v);
                 } else {
-                    this.sendEvent('stopOnException', 'Should be a register');
+                    this.sendEvent('output', 'console', `Error: should be a register for destReg`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
                     return false;
                 }
                 break;
@@ -416,7 +420,8 @@ export class MockRuntime extends EventEmitter {
                 // check if offset is a number
                 if (typeof offset === 'number') {
                     if (offset > 7) {
-                        this.sendEvent('stopOnException', 'Invalid register: only 8 registers are available');
+                        this.sendEvent('output', 'console', `Error: register ${offset} is not valid`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
                         return false;
                     }
                     // nor r1 and r2 and store in r3, all the number are 32bit
@@ -427,7 +432,8 @@ export class MockRuntime extends EventEmitter {
                     this.variables.set(`reg ${offset}`, v);
                 }
                 else {
-                    this.sendEvent('stopOnException', 'Should be a register');
+                    this.sendEvent('output', 'console', `Error: should be a register for destReg`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
                     return false;
                 }
                 break;
@@ -446,7 +452,8 @@ export class MockRuntime extends EventEmitter {
                         }
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
                         return false;
                     }
                 }
@@ -461,7 +468,8 @@ export class MockRuntime extends EventEmitter {
                         num_offset = label.line;
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
                         return false;
                     }
                 } else {
@@ -470,7 +478,8 @@ export class MockRuntime extends EventEmitter {
                 var address = this.variables.get(`reg ${r1}`)?.value + num_offset;
                 var value = this.variables.get('mem')?.value[address];
                 if (value === undefined) {
-                    this.sendEvent('stopOnException', 'Memory out of bound');
+                    this.sendEvent('output', 'console', `Error: address ${address} may not be initialized or out of bound`, this._sourceFile, this.currentLine);
+                    this.sendEvent('stopOnException', undefined);
                     return false;
                 }
                 const v = new RuntimeVariable(`reg ${r2}`, value);
@@ -486,7 +495,8 @@ export class MockRuntime extends EventEmitter {
                         num_offset = label.line;
                     }
                     else {
-                        this.sendEvent('stopOnException', 'Label not found');
+                        this.sendEvent('output', 'console', `Error: label ${offset} not found`, this._sourceFile, this.currentLine);
+                        this.sendEvent('stopOnException', undefined);
                         return false;
                     }
                 } else {
@@ -497,12 +507,16 @@ export class MockRuntime extends EventEmitter {
 
                 this.variables.get('mem')!.value[address] = value;
                 break;
+            default:
+                this.sendEvent('output', 'console', `Error: unknown operation ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
         return true;
     }
 
     // execute J type instruction and update global variables
-    private executeJType(op: string, r1: number, r2: number): void {
+    private executeJType(op: string, r1: number, r2: number): boolean {
         switch (op) {
             case 'jalr':
                 const v = new RuntimeVariable(`reg ${r2}`, this.currentLine + 1);
@@ -510,12 +524,15 @@ export class MockRuntime extends EventEmitter {
                 this.currentLine = Number(this.variables.get(`reg ${r1}`)?.value) - 1;
                 break;
             default:
-                this.sendEvent('stopOnException', 'Invalid instruction');
+                this.sendEvent('output', 'console', `Error: unknown op ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
+        return true;
     }
 
     // execute O type instruction and update global variables
-    private executeOType(op: string): void {
+    private executeOType(op: string): boolean {
         switch (op) {
             case 'halt':
                 // print out all the registers
@@ -523,12 +540,15 @@ export class MockRuntime extends EventEmitter {
                     this.sendEvent('output', 'console', `reg ${i}: ${this.variables.get(`reg ${i}`)?.value}`, this._sourceFile, 0);
                 }
                 this.sendEvent('end');
-                return;
+                return false;
             case 'noop':
                 break;
             default:
-                this.sendEvent('stopOnException', 'Invalid instruction');
+                this.sendEvent('output', 'console', `Error: unknown op ${op}`, this._sourceFile, this.currentLine);
+                this.sendEvent('stopOnException', undefined);
+                return false;
         }
+        return true;
     }
     /**
      * return true on stop
@@ -603,13 +623,13 @@ export class MockRuntime extends EventEmitter {
             op = match[2];
             reg1 = parseInt(match[3]);
             reg2 = parseInt(match[4]);
-            this.executeJType(op, reg1, reg2);
+            if (!this.executeJType(op, reg1, reg2)) {
+                return true;
+            }
         } else if (match = O_INST_REGEX.exec(line)) {
             // O-type instruction
             op = match[2];
-            this.executeOType(op);
-            // if it is halt, we should stop
-            if (op === 'halt') {
+            if (!this.executeOType(op)) {
                 return true;
             }
         } else if (match = FILL_REGEX.exec(line)) {
@@ -618,7 +638,8 @@ export class MockRuntime extends EventEmitter {
             offset = match[3];
         } else {
             // invalid instruction
-            this.sendEvent('stopOnException', "invalid pattern");
+            this.sendEvent('output', 'console', `Error: invalid instruction ${line}`, this._sourceFile, ln);
+            this.sendEvent('stopOnException', undefined);
             return true;
         }
 

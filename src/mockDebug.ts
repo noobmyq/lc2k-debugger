@@ -174,23 +174,23 @@ export class MockDebugSession extends LoggingDebugSession {
 
         // the adapter defines two exceptions filters, one with support for conditions.
         response.body.supportsExceptionFilterOptions = false;
-        response.body.exceptionBreakpointFilters = [
-            {
-                filter: 'namedException',
-                label: "Named Exception",
-                description: `Break on named exceptions. Enter the exception's name as the Condition.`,
-                default: false,
-                supportsCondition: true,
-                conditionDescription: `Enter the exception's name`
-            },
-            {
-                filter: 'otherExceptions',
-                label: "Other Exceptions",
-                description: 'This is a other exception',
-                default: true,
-                supportsCondition: false
-            }
-        ];
+        // response.body.exceptionBreakpointFilters = [
+        //     {
+        //         filter: 'namedException',
+        //         label: "Named Exception",
+        //         description: `Break on named exceptions. Enter the exception's name as the Condition.`,
+        //         default: false,
+        //         supportsCondition: true,
+        //         conditionDescription: `Enter the exception's name`
+        //     },
+        //     {
+        //         filter: 'otherExceptions',
+        //         label: "Other Exceptions",
+        //         description: 'This is a other exception',
+        //         default: true,
+        //         supportsCondition: false
+        //     }
+        // ];
 
         // make VS Code send exceptionInfo request
         response.body.supportsExceptionInfoRequest = true;
@@ -343,13 +343,12 @@ export class MockDebugSession extends LoggingDebugSession {
     }
     protected exceptionInfoRequest(response: DebugProtocol.ExceptionInfoResponse, args: DebugProtocol.ExceptionInfoArguments) {
         response.body = {
-            exceptionId: 'Exception ID',
-            description: 'This is a descriptive description of the exception.',
+            exceptionId: String(args.threadId),
+            description: 'Try looking at the Debug Console for more information',
             breakMode: 'always',
             details: {
                 message: 'Message contained in the exception.',
-                typeName: 'Short type name of the exception object',
-                stackTrace: 'stack frame 1\nstack frame 2',
+                typeName: 'Short type name of the exception object'
             }
         };
         this.sendResponse(response);
