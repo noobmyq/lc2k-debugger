@@ -15,13 +15,12 @@ import {
     LoggingDebugSession,
     InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
     ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
-    Thread, StackFrame, Scope, Source, Handles, Breakpoint, MemoryEvent
+    Thread, StackFrame, Scope, Source, Handles, Breakpoint
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { basename } from 'path-browserify';
 import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, timeout, IRuntimeVariableType } from './mockRuntime';
 import { Subject } from 'await-notify';
-import * as base64 from 'base64-js';
 
 /**
  * This interface describes the mock-debug specific launch attributes
@@ -58,7 +57,6 @@ export class MockDebugSession extends LoggingDebugSession {
     private _configurationDone = new Subject();
 
     private _cancellationTokens = new Map<number, boolean>();
-
     private _reportProgress = false;
     private _progressId = 10000;
     private _cancelledProgressId: string | undefined = undefined;
@@ -315,7 +313,34 @@ export class MockDebugSession extends LoggingDebugSession {
         }
         this.sendResponse(response);
     }
+    protected async setExceptionBreakPointsRequest(response: DebugProtocol.SetExceptionBreakpointsResponse, args: DebugProtocol.SetExceptionBreakpointsArguments): Promise<void> {
 
+        let namedException: string | undefined = undefined;
+        let otherExceptions = false;
+
+        if (args.filterOptions) {
+            for (const filterOption of args.filterOptions) {
+                switch (filterOption.filterId) {
+                    case 'namedException':
+                        namedException = args.filterOptions[0].condition;
+                        break;
+                    case 'otherExceptions':
+                        otherExceptions = true;
+                        break;
+                }
+            }
+        }
+
+        if (args.filters) {
+            if (args.filters.indexOf('otherExceptions') >= 0) {
+                otherExceptions = true;
+            }
+        }
+
+        this._runtime.setExceptionsFilters(namedException, otherExceptions);
+
+        this.sendResponse(response);
+    }
     protected exceptionInfoRequest(response: DebugProtocol.ExceptionInfoResponse, args: DebugProtocol.ExceptionInfoArguments) {
         response.body = {
             exceptionId: 'Exception ID',
@@ -384,43 +409,7 @@ export class MockDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected async writeMemoryRequest(response: DebugProtocol.WriteMemoryResponse, { data, memoryReference, offset = 0 }: DebugProtocol.WriteMemoryArguments) {
-        const variable = this._variableHandles.get(Number(memoryReference));
-        if (typeof variable === 'object') {
-            const decoded = base64.toByteArray(data);
-            variable.setMemory(decoded, offset);
-            response.body = { bytesWritten: decoded.length };
-        } else {
-            response.body = { bytesWritten: 0 };
-        }
 
-        this.sendResponse(response);
-        this.sendEvent(new InvalidatedEvent(['variables']));
-    }
-
-    protected async readMemoryRequest(response: DebugProtocol.ReadMemoryResponse, { offset = 0, count, memoryReference }: DebugProtocol.ReadMemoryArguments) {
-        const variable = this._variableHandles.get(Number(memoryReference));
-        if (typeof variable === 'object' && variable.memory) {
-            const memory = variable.memory.subarray(
-                Math.min(offset, variable.memory.length),
-                Math.min(offset + count, variable.memory.length),
-            );
-
-            response.body = {
-                address: offset.toString(),
-                data: base64.fromByteArray(memory),
-                unreadableBytes: count - memory.length
-            };
-        } else {
-            response.body = {
-                address: offset.toString(),
-                data: '',
-                unreadableBytes: count
-            };
-        }
-
-        this.sendResponse(response);
-    }
 
     protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
 
@@ -453,9 +442,6 @@ export class MockDebugSession extends LoggingDebugSession {
             rv.value = this.convertToRuntime(args.value);
             response.body = this.convertFromRuntime(rv);
 
-            if (rv.memory && rv.reference) {
-                this.sendEvent(new MemoryEvent(String(rv.reference), 0, rv.memory.length));
-            }
         }
 
         this.sendResponse(response);
@@ -467,12 +453,12 @@ export class MockDebugSession extends LoggingDebugSession {
     }
 
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-        this._runtime.step(args.granularity === 'instruction');
+        this._runtime.step();
         this.sendResponse(response);
     }
 
     protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-        this._runtime.step(args.granularity === 'instruction');
+        this._runtime.step();
         this.sendResponse(response);
     }
 
@@ -798,10 +784,7 @@ export class MockDebugSession extends LoggingDebugSession {
             }
         }
 
-        if (v.memory) {
-            v.reference ??= this._variableHandles.create(v);
-            dapVariable.memoryReference = String(v.reference);
-        }
+
 
         return dapVariable;
     }
