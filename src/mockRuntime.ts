@@ -300,22 +300,25 @@ export class MockRuntime extends EventEmitter {
         this.instructionBreakpoints.clear();
     }
 
-
-
-    public getLocalVariables(): RuntimeVariable[] {
-        // extract 8 registers
-        var shows: RuntimeVariable[] = [];
+    public getRegisters(): RuntimeVariable[] {
+        var regs: RuntimeVariable[] = [];
         for (let i = 0; i < 8; i++) {
-            shows.push(this.variables.get(`reg ${i}`)!);
+            regs.push(this.variables.get(`reg ${i}`)!);
         }
+        return regs;
+    }
+    public getMemory(): RuntimeVariable[] {
+        var mems: RuntimeVariable[] = [];
         for (let i = 0; i < 300; i++) {
             const v = this.variables.get(`mem`)!.value[i];
             if (v) {
-                shows.push(new RuntimeVariable(`mem[${i}]`, v));
+                mems.push(new RuntimeVariable(`mem[${i}]`, v));
             }
         }
-        return shows;
+        return mems;
     }
+
+
 
     public getLocalVariable(name: string): RuntimeVariable | undefined {
         return this.variables.get(name);

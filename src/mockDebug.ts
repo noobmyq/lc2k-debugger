@@ -14,12 +14,12 @@ import {
     Logger, logger,
     LoggingDebugSession,
     InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
-    ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent, InvalidatedEvent,
+    InvalidatedEvent,
     Thread, StackFrame, Scope, Source, Handles, Breakpoint
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { basename } from 'path-browserify';
-import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, timeout, IRuntimeVariableType } from './mockRuntime';
+import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, IRuntimeVariableType } from './mockRuntime';
 import { Subject } from 'await-notify';
 
 /**
@@ -52,15 +52,15 @@ export class MockDebugSession extends LoggingDebugSession {
     // a Mock runtime (or debugger)
     private _runtime: MockRuntime;
 
-    private _variableHandles = new Handles<'locals' | 'globals' | RuntimeVariable>();
+    private _variableHandles = new Handles<'regs' | 'mems' | RuntimeVariable>();
 
     private _configurationDone = new Subject();
 
     private _cancellationTokens = new Map<number, boolean>();
-    private _reportProgress = false;
-    private _progressId = 10000;
-    private _cancelledProgressId: string | undefined = undefined;
-    private _isProgressCancellable = true;
+    // private _reportProgress = false;
+    // private _progressId = 10000;
+    // private _cancelledProgressId: string | undefined = undefined;
+    // private _isProgressCancellable = true;
 
     private _valuesInHex = false;
     private _useInvalidatedEvent = false;
@@ -139,7 +139,7 @@ export class MockDebugSession extends LoggingDebugSession {
     protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void {
 
         if (args.supportsProgressReporting) {
-            this._reportProgress = true;
+            // this._reportProgress = true;
         }
         if (args.supportsInvalidatedEvent) {
             this._useInvalidatedEvent = true;
@@ -373,8 +373,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
         response.body = {
             scopes: [
-                new Scope("Locals", this._variableHandles.create('locals'), false),
-                new Scope("Globals", this._variableHandles.create('globals'), true)
+                new Scope("Registers", this._variableHandles.create('regs'), false),
+                new Scope("Mems", this._variableHandles.create('mems'), false)
             ]
         };
         this.sendResponse(response);
@@ -387,12 +387,10 @@ export class MockDebugSession extends LoggingDebugSession {
         let vs: RuntimeVariable[] = [];
 
         const v = this._variableHandles.get(args.variablesReference);
-        if (v === 'locals') {
-            vs = this._runtime.getLocalVariables();
-        } else if (v === 'globals') {
-            // no globals
-        } else if (v && Array.isArray(v.value)) {
-            vs = v.value;
+        if (v === 'regs') {
+            vs = this._runtime.getRegisters();
+        } else if (v === 'mems') {
+            vs = this._runtime.getMemory();
         }
 
         response.body = {
@@ -403,12 +401,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
     protected setVariableRequest(response: DebugProtocol.SetVariableResponse, args: DebugProtocol.SetVariableArguments): void {
         const container = this._variableHandles.get(args.variablesReference);
-        const rv = container === 'locals'
-            ? this._runtime.getLocalVariable(args.name)
-            : container instanceof RuntimeVariable && container.value instanceof Array
-                ? container.value.find(v => v.name === args.name)
-                : undefined;
 
+        const rv = container === 'regs' ? this._runtime.getLocalVariable(args.name) : undefined;
         if (rv) {
             rv.value = this.convertToRuntime(args.value);
             response.body = this.convertFromRuntime(rv);
@@ -439,67 +433,19 @@ export class MockDebugSession extends LoggingDebugSession {
 
     protected async evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): Promise<void> {
 
-        let reply: string | undefined;
-        let rv: RuntimeVariable | undefined;
-
-        switch (args.context) {
-            case 'repl':
-                // handle some REPL commands:
-                // 'evaluate' supports to create and delete breakpoints from the 'repl':
-                const matches = /new +([0-9]+)/.exec(args.expression);
-                if (matches && matches.length === 2) {
-                    const mbp = await this._runtime.setBreakPoint(this._runtime.sourceFile, this.convertClientLineToDebugger(parseInt(matches[1])));
-                    const bp = new Breakpoint(mbp.verified, this.convertDebuggerLineToClient(mbp.line), undefined, this.createSource(this._runtime.sourceFile)) as DebugProtocol.Breakpoint;
-                    bp.id = mbp.id;
-                    this.sendEvent(new BreakpointEvent('new', bp));
-                    reply = `breakpoint created`;
-                } else {
-                    const matches = /del +([0-9]+)/.exec(args.expression);
-                    if (matches && matches.length === 2) {
-                        const mbp = this._runtime.clearBreakPoint(this._runtime.sourceFile, this.convertClientLineToDebugger(parseInt(matches[1])));
-                        if (mbp) {
-                            const bp = new Breakpoint(false) as DebugProtocol.Breakpoint;
-                            bp.id = mbp.id;
-                            this.sendEvent(new BreakpointEvent('removed', bp));
-                            reply = `breakpoint deleted`;
-                        }
-                    } else {
-                        const matches = /progress/.exec(args.expression);
-                        if (matches && matches.length === 1) {
-                            if (this._reportProgress) {
-                                reply = `progress started`;
-                                this.progressSequence();
-                            } else {
-                                reply = `frontend doesn't support progress (capability 'supportsProgressReporting' not set)`;
-                            }
-                        }
-                    }
-                }
-            // fall through
-
-            default:
-                if (args.expression.startsWith('$')) {
-                    rv = this._runtime.getLocalVariable(args.expression.substr(1));
-                } else {
-                    rv = new RuntimeVariable('eval', this.convertToRuntime(args.expression));
-                }
-                break;
-        }
-
-        if (rv) {
-            const v = this.convertFromRuntime(rv);
-            response.body = {
-                result: v.value,
-                type: v.type,
-                variablesReference: v.variablesReference,
-                presentationHint: v.presentationHint
-            };
-        } else {
-            response.body = {
-                result: reply ? reply : `evaluate(context: '${args.context}', '${args.expression}')`,
-                variablesReference: 0
-            };
-        }
+        const v: DebugProtocol.Variable = {
+            name: 'eval',
+            value: 'lol, not available',
+            type: 'string',
+            variablesReference: 0,
+            evaluateName: '$'
+        };
+        response.body = {
+            result: v.value,
+            type: v.type,
+            variablesReference: v.variablesReference,
+            presentationHint: v.presentationHint
+        };
 
         this.sendResponse(response);
     }
@@ -530,36 +476,6 @@ export class MockDebugSession extends LoggingDebugSession {
         }
     }
 
-    private async progressSequence() {
-
-        const ID = '' + this._progressId++;
-
-        await timeout(100);
-
-        const title = this._isProgressCancellable ? 'Cancellable operation' : 'Long running operation';
-        const startEvent: DebugProtocol.ProgressStartEvent = new ProgressStartEvent(ID, title);
-        startEvent.body.cancellable = this._isProgressCancellable;
-        this._isProgressCancellable = !this._isProgressCancellable;
-        this.sendEvent(startEvent);
-        this.sendEvent(new OutputEvent(`start progress: ${ID}\n`));
-
-        let endMessage = 'progress ended';
-
-        for (let i = 0; i < 100; i++) {
-            await timeout(500);
-            this.sendEvent(new ProgressUpdateEvent(ID, `progress: ${i}`));
-            if (this._cancelledProgressId === ID) {
-                endMessage = 'progress cancelled';
-                this._cancelledProgressId = undefined;
-                this.sendEvent(new OutputEvent(`cancel progress: ${ID}\n`));
-                break;
-            }
-        }
-        this.sendEvent(new ProgressEndEvent(ID, endMessage));
-        this.sendEvent(new OutputEvent(`end progress: ${ID}\n`));
-
-        this._cancelledProgressId = undefined;
-    }
 
     protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments): void {
 
@@ -572,7 +488,7 @@ export class MockDebugSession extends LoggingDebugSession {
 
         if (args.variablesReference && args.name) {
             const v = this._variableHandles.get(args.variablesReference);
-            if (v === 'globals') {
+            if (v === 'mems') {
                 response.body.dataId = args.name;
                 response.body.description = args.name;
                 response.body.accessTypes = ["write"];
@@ -646,7 +562,7 @@ export class MockDebugSession extends LoggingDebugSession {
             this._cancellationTokens.set(args.requestId, true);
         }
         if (args.progressId) {
-            this._cancelledProgressId = args.progressId;
+            // this._cancelledProgressId = args.progressId;
         }
     }
 
@@ -696,9 +612,9 @@ export class MockDebugSession extends LoggingDebugSession {
         if (value === 'false') {
             return false;
         }
-        if (value[0] === '\'' || value[0] === '"') {
-            return value.substr(1, value.length - 2);
-        }
+        // if value is of form 'reg 0' then return a register variable
+        const reg_regex = value.match(/^reg (\d+)$/);
+        if (reg_regex) { }
         const n = parseFloat(value);
         if (!isNaN(n)) {
             return n;
