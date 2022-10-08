@@ -159,9 +159,6 @@ export class MockDebugSession extends LoggingDebugSession {
         // make VS Code support data breakpoints
         response.body.supportsDataBreakpoints = true;
 
-        // make VS Code support completion in REPL
-        response.body.supportsCompletionsRequest = true;
-        response.body.completionTriggerCharacters = [".", "["];
 
         // make VS Code send cancel request
         response.body.supportsCancelRequest = true;
@@ -172,25 +169,7 @@ export class MockDebugSession extends LoggingDebugSession {
         // make VS Code provide "Step in Target" functionality
         response.body.supportsStepInTargetsRequest = false;
 
-        // the adapter defines two exceptions filters, one with support for conditions.
-        response.body.supportsExceptionFilterOptions = false;
-        // response.body.exceptionBreakpointFilters = [
-        //     {
-        //         filter: 'namedException',
-        //         label: "Named Exception",
-        //         description: `Break on named exceptions. Enter the exception's name as the Condition.`,
-        //         default: false,
-        //         supportsCondition: true,
-        //         conditionDescription: `Enter the exception's name`
-        //     },
-        //     {
-        //         filter: 'otherExceptions',
-        //         label: "Other Exceptions",
-        //         description: 'This is a other exception',
-        //         default: true,
-        //         supportsCondition: false
-        //     }
-        // ];
+
 
         // make VS Code send exceptionInfo request
         response.body.supportsExceptionInfoRequest = true;
@@ -331,8 +310,7 @@ export class MockDebugSession extends LoggingDebugSession {
         // runtime supports no threads so just return a default thread.
         response.body = {
             threads: [
-                new Thread(MockDebugSession.threadID, "thread 1"),
-                new Thread(MockDebugSession.threadID + 1, "thread 2"),
+                new Thread(MockDebugSession.threadID, "thread 1")
             ]
         };
         this.sendResponse(response);
@@ -523,39 +501,6 @@ export class MockDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected completionsRequest(response: DebugProtocol.CompletionsResponse, args: DebugProtocol.CompletionsArguments): void {
-
-        response.body = {
-            targets: [
-                {
-                    label: "item 10",
-                    sortText: "10"
-                },
-                {
-                    label: "item 1",
-                    sortText: "01",
-                    detail: "detail 1"
-                },
-                {
-                    label: "item 2",
-                    sortText: "02",
-                    detail: "detail 2"
-                },
-                {
-                    label: "array[]",
-                    selectionStart: 6,
-                    sortText: "03"
-                },
-                {
-                    label: "func(arg)",
-                    selectionStart: 5,
-                    selectionLength: 3,
-                    sortText: "04"
-                }
-            ]
-        };
-        this.sendResponse(response);
-    }
 
     protected cancelRequest(response: DebugProtocol.CancelResponse, args: DebugProtocol.CancelArguments) {
         if (args.requestId) {
@@ -612,6 +557,7 @@ export class MockDebugSession extends LoggingDebugSession {
         if (value === 'false') {
             return false;
         }
+        // TODO:
         // if value is of form 'reg 0' then return a register variable
         const reg_regex = value.match(/^reg (\d+)$/);
         if (reg_regex) { }

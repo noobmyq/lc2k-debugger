@@ -191,9 +191,8 @@ export class MockRuntime extends EventEmitter {
     }
 
 
-    /**
-     * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
-     */
+    // TODO:
+    // use jalr to record stack frame
     public stack(startFrame: number, endFrame: number): IRuntimeStack {
 
         const line = this.getLine();
@@ -205,19 +204,18 @@ export class MockRuntime extends EventEmitter {
         const column = typeof this.currentColumn === 'number' ? this.currentColumn : undefined;
 
         const frames: IRuntimeStackFrame[] = [];
-        // every word of the current line becomes a stack frame.
-        for (let i = startFrame; i < Math.min(endFrame, words.length); i++) {
 
-            const stackFrame: IRuntimeStackFrame = {
-                index: i,
-                name: `${words[i].name}(${i})`,	// use a word of the line as the stackframe name
-                file: this._sourceFile,
-                line: this.currentLine,
-                column: column, // words[i].index
-            };
 
-            frames.push(stackFrame);
-        }
+        const stackFrame: IRuntimeStackFrame = {
+            index: 0,
+            name: line,	// use a word of the line as the stackframe name
+            file: this._sourceFile,
+            line: this.currentLine,
+            column: column, // words[i].index
+        };
+
+        frames.push(stackFrame);
+
 
         return {
             frames: frames,
