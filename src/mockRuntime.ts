@@ -543,7 +543,7 @@ export class MockRuntime extends EventEmitter {
             case 'halt':
                 // print out all the registers
                 for (let i = 0; i < 8; i++) {
-                    this.sendEvent('output', 'err', `reg ${i}: ${this.variables.get(`reg ${i}`)?.value}`, this._sourceFile, 0);
+                    this.sendEvent('output', 'out', `reg ${i}: ${this.variables.get(`reg ${i}`)?.value}`, this._sourceFile, 0);
                 }
                 this.sendEvent('end');
                 return false;

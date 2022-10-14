@@ -440,8 +440,22 @@ export class MockDebugSession extends LoggingDebugSession {
     }
 
     protected async evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): Promise<void> {
+        var value: DebugProtocol.Variable | undefined = undefined;
 
-        const v: DebugProtocol.Variable = {
+        const REG_EXP_PARSER = /^reg [0-9]/g;
+        const MEM_EXP_PARSER = /^mem [0-9]/g;
+        var match: RegExpExecArray | null;
+        if (match = REG_EXP_PARSER.exec(args.expression)) {
+            const reg = this._runtime.getLocalVariable(match[0])!;
+            value = (this.convertFromRuntime(reg));
+        } else if (match = MEM_EXP_PARSER.exec(args.expression)) {
+            const NUMBER_PARSER = /\s[0-9]*/g;
+            const loc = Number(NUMBER_PARSER.exec(args.expression)!);
+            const mem: number = this._runtime.getLocalVariable('mem')?.value[loc];
+            const memVar: RuntimeVariable = new RuntimeVariable('mem', mem);
+            value = (this.convertFromRuntime(memVar));
+        }
+        const v: DebugProtocol.Variable = value ? value : {
             name: 'eval',
             value: 'lol, not available',
             type: 'string',
