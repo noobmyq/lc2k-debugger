@@ -1,6 +1,6 @@
 	lw	0	1	n	a program to calculate the combination of two numbers
 	lw	0	2	r
-	lw	0	4	Caddr	load combination function address
+	lw	0	9	Caddr	load combination function address
 	jalr	4	7		call function
 	halt
 comb	lw	0	6	pos1	r6=1

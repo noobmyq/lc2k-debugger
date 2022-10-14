@@ -19,7 +19,7 @@ import {
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { basename } from 'path-browserify';
-import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, IRuntimeVariableType } from './mockRuntime';
+import { MockRuntime, IRuntimeBreakpoint, FileAccessor, RuntimeVariable, IRuntimeVariableType, RuntimeException } from './mockRuntime';
 import { Subject } from 'await-notify';
 
 /**
@@ -57,11 +57,8 @@ export class MockDebugSession extends LoggingDebugSession {
     private _configurationDone = new Subject();
 
     private _cancellationTokens = new Map<number, boolean>();
-    // private _reportProgress = false;
-    // private _progressId = 10000;
-    // private _cancelledProgressId: string | undefined = undefined;
-    // private _isProgressCancellable = true;
-
+    private _exceptionMsg: string | undefined;
+    private _exceptionType: RuntimeException = RuntimeException.None;
     private _valuesInHex = false;
     private _useInvalidatedEvent = false;
 
@@ -98,10 +95,18 @@ export class MockDebugSession extends LoggingDebugSession {
         });
         this._runtime.on('stopOnException', (exception) => {
             if (exception) {
-                this.sendEvent(new StoppedEvent(`exception(${exception})`, MockDebugSession.threadID));
-            } else {
-                this.sendEvent(new StoppedEvent('exception', MockDebugSession.threadID));
+                const error_num_REGEX = /^[0-9]\s/g;
+                var match = error_num_REGEX.exec(exception)
+                if (match) {
+                    this._exceptionType = Number(match[0]) as RuntimeException;
+                }
+                const line_REGEX = /^[0-9] in line: (.*)/g
+                match = line_REGEX.exec(exception)
+                if (match) {
+                    this._exceptionMsg = match[1];
+                }
             }
+            this.sendEvent(new StoppedEvent('exception', MockDebugSession.threadID));
         });
         this._runtime.on('breakpointValidated', (bp: IRuntimeBreakpoint) => {
             this.sendEvent(new BreakpointEvent('changed', { verified: bp.verified, id: bp.id } as DebugProtocol.Breakpoint));
@@ -293,13 +298,38 @@ export class MockDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
     protected exceptionInfoRequest(response: DebugProtocol.ExceptionInfoResponse, args: DebugProtocol.ExceptionInfoArguments) {
+        var description_msg: string = "Exception description";
+        var detailed_explain: string | undefined = undefined;
+        switch (this._exceptionType as RuntimeException) {
+            case RuntimeException.InvalidInstruction:
+                description_msg = "Invalid instruction";
+                detailed_explain = "There are only 8 valid instruction, are you using one of them?";
+                break;
+            case RuntimeException.InvalidMemory:
+                description_msg = "Invalid memory access";
+                detailed_explain = "You are trying to access memory that is not accessable by LC2K";
+                break;
+            case RuntimeException.InvalidRegister:
+                description_msg = "Invalid register access"
+                detailed_explain = "Please notice that there are only 8 registers so you can only access R0-R7";
+                break;
+            case RuntimeException.InvalidLabel:
+                description_msg = "Invalid label"
+                detailed_explain = "Have you defined it before?";
+                break;
+            default:
+                break;
+        }
+
         response.body = {
             exceptionId: String(args.threadId),
-            description: 'Try looking at the Debug Console for more information',
+            description: description_msg + ` in line\n ${this._exceptionMsg}\n${detailed_explain}`,
             breakMode: 'always',
             details: {
                 message: 'Message contained in the exception.',
-                typeName: 'Short type name of the exception object'
+                typeName: 'Short type name of the exception object',
+                // set the font size
+
             }
         };
         this.sendResponse(response);
